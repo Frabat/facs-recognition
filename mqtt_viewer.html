@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F.A.C.S. Recognition - Live Viewer</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .message-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .emotion-bar {
+            background: #e0e0e0;
+            height: 25px;
+            border-radius: 5px;
+            margin: 5px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .emotion-fill {
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            height: 100%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            padding-left: 10px;
+            color: white;
+            font-weight: bold;
+        }
+        .facs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .facs-item {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .facs-au {
+            font-weight: bold;
+            color: #333;
+        }
+        .facs-score {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .no-messages {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎭 F.A.C.S. Recognition - Live Viewer</h1>
+    
+    <div id="status" class="status disconnected">
+        Disconnected
+    </div>
+    
+    <div id="debug" style="background: #fff3cd; padding: 10px; margin-bottom: 20px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+        <strong>Debug Log:</strong><br>
+        <div id="debug-log"></div>
+    </div>
+    
+    <div id="messages"></div>
+    <div id="no-messages" class="no-messages">
+        Waiting for messages...
+    </div>
+
+    <script>
+        // MQTT Configuration
+        const MQTT_BROKER = 'ws://localhost:9001'; // WebSocket port
+        const MQTT_TOPIC = 'facs/stream';  // Match docker-compose.yml
+        
+        let client;
+        let messageCount = 0;
+
+        function addDebugLog(message) {
+            const debugLog = document.getElementById('debug-log');
+            const timestamp = new Date().toLocaleTimeString();
+            debugLog.innerHTML += `[${timestamp}] ${message}<br>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+
+        // Connect to MQTT broker
+        function connect() {
+            addDebugLog(`Attempting to connect to ${MQTT_BROKER}...`);
+            
+            try {
+                client = mqtt.connect(MQTT_BROKER);
+                addDebugLog('MQTT client created');
+            } catch (e) {
+                addDebugLog(`Error creating client: ${e.message}`);
+                return;
+            }
+            
+            client.on('connect', () => {
+                console.log('Connected to MQTT broker');
+                addDebugLog('✓ Connected to MQTT broker');
+                document.getElementById('status').className = 'status connected';
+                document.getElementById('status').textContent = '✓ Connected to MQTT Broker';
+                
+                client.subscribe(MQTT_TOPIC, (err) => {
+                    if (err) {
+                        console.error('Subscription error:', err);
+                        addDebugLog(`✗ Subscription error: ${err.message}`);
+                    } else {
+                        console.log('Subscribed to', MQTT_TOPIC);
+                        addDebugLog(`✓ Subscribed to topic: ${MQTT_TOPIC}`);
+                    }
+                });
+            });
+            
+            client.on('message', (topic, message) => {
+                addDebugLog(`📨 Message received on ${topic} (${message.length} bytes)`);
+                handleMessage(message.toString());
+            });
+            
+            client.on('error', (err) => {
+                console.error('MQTT error:', err);
+                addDebugLog(`✗ Error: ${err.message || err}`);
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('status').textContent = '✗ Connection Error';
+            });
+            
+            client.on('close', () => {
+                addDebugLog('Connection closed');
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('status').textContent = '✗ Disconnected';
+            });
+            
+            client.on('offline', () => {
+                addDebugLog('Client went offline');
+            });
+            
+            client.on('reconnect', () => {
+                addDebugLog('Attempting to reconnect...');
+            });
+        }
+
+        function handleMessage(messageStr) {
+            try {
+                const data = JSON.parse(messageStr);
+                displayMessage(data);
+                document.getElementById('no-messages').style.display = 'none';
+            } catch (e) {
+                console.error('Error parsing message:', e);
+            }
+        }
+
+        function displayMessage(data) {
+            messageCount++;
+            const container = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-container';
+            
+            const timestamp = new Date(data.batch_timestamp * 1000).toLocaleString();
+            
+            let html = `
+                <div class="timestamp">📊 Batch #${messageCount} - ${timestamp}</div>
+                <p><strong>Interval:</strong> ${data.interval_seconds}s | 
+                   <strong>Frames:</strong> ${data.frames_analyzed}/${data.frames_buffered}</p>
+            `;
+            
+            data.results.forEach((result, idx) => {
+                html += `<hr><h3>Face #${idx + 1} - ${result.face_id}</h3>`;
+                
+                if (result.emotions && result.emotions.top_3) {
+                    html += '<h4>😊 Top Emotions:</h4>';
+                    result.emotions.top_3.forEach(emotion => {
+                        const percentage = (emotion.score * 100).toFixed(1);
+                        html += `
+                            <div class="emotion-bar">
+                                <div class="emotion-fill" style="width: ${percentage}%">
+                                    ${emotion.name}: ${emotion.score.toFixed(4)}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                if (result.facs && result.facs.length > 0) {
+                    html += `<h4>🎭 F.A.C.S. Action Units (${result.facs_count}):</h4>`;
+                    html += '<div class="facs-grid">';
+                    result.facs.slice(0, 12).forEach(au => {
+                        html += `
+                            <div class="facs-item">
+                                <div class="facs-au">${au.action_unit}</div>
+                                <div class="facs-score">${au.evidence.toFixed(3)}</div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+                
+                if (result.descriptions && result.descriptions.length > 0) {
+                    html += '<h4>📝 Descriptions:</h4><ul>';
+                    result.descriptions.slice(0, 5).forEach(desc => {
+                        html += `<li>${desc.name}: ${desc.score.toFixed(4)}</li>`;
+                    });
+                    html += '</ul>';
+                }
+            });
+            
+            messageDiv.innerHTML = html;
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            // Keep only last 10 messages
+            while (container.children.length > 10) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        // Connect on page load
+        connect();
+    </script>
+</body>
+</html>
+

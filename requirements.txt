@@ -1,0 +1,4 @@
+opencv-python-headless
+paho-mqtt<2.0.0
+python-dotenv
+hume

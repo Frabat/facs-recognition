@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MQTT WebSocket Test</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body>
+    <h1>MQTT WebSocket Connection Test</h1>
+    <div id="output" style="font-family: monospace; white-space: pre-wrap; background: #f0f0f0; padding: 20px;"></div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(msg) {
+            const timestamp = new Date().toISOString();
+            output.textContent += `[${timestamp}] ${msg}\n`;
+            console.log(msg);
+        }
+
+        log('Starting MQTT WebSocket test...');
+        log('Broker: ws://localhost:9001');
+        log('Topic: facs/stream');
+        log('---');
+
+        try {
+            const client = mqtt.connect('ws://localhost:9001');
+            log('MQTT client created');
+
+            client.on('connect', () => {
+                log('✓ CONNECTED to MQTT broker!');
+                
+                client.subscribe('facs/stream', (err) => {
+                    if (err) {
+                        log(`✗ Subscribe error: ${err.message}`);
+                    } else {
+                        log('✓ SUBSCRIBED to facs/stream');
+                        log('Waiting for messages...');
+                    }
+                });
+                
+                // Also subscribe to all topics for testing
+                client.subscribe('#', (err) => {
+                    if (!err) {
+                        log('✓ Also subscribed to all topics (#) for debugging');
+                    }
+                });
+            });
+
+            client.on('message', (topic, message) => {
+                log(`📨 MESSAGE on "${topic}": ${message.length} bytes`);
+                log(`Content preview: ${message.toString().substring(0, 200)}...`);
+            });
+
+            client.on('error', (err) => {
+                log(`✗ ERROR: ${err.message || err}`);
+            });
+
+            client.on('close', () => {
+                log('Connection closed');
+            });
+
+            client.on('offline', () => {
+                log('Client is offline');
+            });
+
+            client.on('reconnect', () => {
+                log('Reconnecting...');
+            });
+
+        } catch (e) {
+            log(`✗ EXCEPTION: ${e.message}`);
+        }
+    </script>
+</body>
+</html>
+
